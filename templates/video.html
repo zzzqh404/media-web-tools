@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>视频转码 · 本地媒体工具箱</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🎬</span>
+      <div>
+        <h1>视频转码</h1>
+        <div class="caps-info" id="ffmpeg-info">正在检测 ffmpeg...</div>
+      </div>
+    </div>
+    <nav class="tool-tabs">
+      <a href="/" class="active">🎬 视频转码</a>
+      <a href="/photo">🖼️ 照片压缩</a>
+    </nav>
+    <div class="topbar-actions">
+      <button class="btn danger" id="btn-stop" disabled>⏹ 停止当前任务</button>
+      <button class="btn" id="btn-restart">🔄 重启服务</button>
+    </div>
+  </header>
+
+  <section class="ops-bar">
+    <!-- 行 1：添加视频 -->
+    <div class="ops-row">
+      <span class="ops-label">添加视频</span>
+      <button class="btn" id="btn-pick">📂 选择文件…</button>
+      <button class="btn" id="btn-pick-dir">📁 选择文件夹…</button>
+      <input type="text" id="path-input" placeholder="或粘贴本地路径（支持文件夹）">
+      <button class="btn" id="btn-add-path">添加</button>
+      <div id="pending-list" class="pending-list"></div>
+    </div>
+
+    <!-- 行 2：预设 + 参数 + 命令预览 + 开始（同一个框） -->
+    <div class="ops-row ops-main">
+      <div id="preset-grid" class="preset-grid"></div>
+      <div class="params">
+        <div class="field">
+          <label>编码方式</label>
+          <div class="radio-row">
+            <label class="radio"><input type="radio" name="mode" value="crf" checked> CRF/QP</label>
+            <label class="radio"><input type="radio" name="mode" value="bitrate"> 码率</label>
+          </div>
+        </div>
+        <div class="field" id="field-crf">
+          <label><span id="crf-name">CRF</span> <b id="crf-value">23</b></label>
+          <input type="range" id="crf" min="0" max="51" value="23">
+        </div>
+        <div class="field hidden" id="field-bitrate">
+          <label>固定码率</label>
+          <div class="inline">
+            <input type="text" id="bitrate" placeholder="码率 8000k">
+            <input type="text" id="maxrate" placeholder="峰值">
+            <input type="text" id="bufsize" placeholder="缓冲">
+          </div>
+        </div>
+        <div class="field hidden" id="field-x265-preset">
+          <label>x265 速度</label>
+          <select id="x265-preset"></select>
+        </div>
+        <div class="field hidden" id="field-amf-quality">
+          <label>AMD 质量</label>
+          <select id="amf-quality">
+            <option value="speed">speed（最快）</option>
+            <option value="balanced">balanced（平衡）</option>
+            <option value="quality" selected>quality（质量）</option>
+          </select>
+        </div>
+        <div class="field hidden" id="field-nvenc-preset">
+          <label>NVENC 速度</label>
+          <select id="nvenc-preset"></select>
+        </div>
+        <div class="field hidden" id="field-qsv-preset">
+          <label>QSV 速度</label>
+          <select id="qsv-preset"></select>
+        </div>
+        <div class="field">
+          <label>分辨率</label>
+          <div class="inline">
+            <select id="resolution">
+              <option value="original" selected>原始</option>
+              <option value="3840:2160">4K</option>
+              <option value="2560:1440">2K</option>
+              <option value="1920:1080">1080p</option>
+              <option value="2160:3840">4K 竖</option>
+              <option value="1440:2560">2K 竖</option>
+              <option value="1080:1920">1080p 竖</option>
+              <option value="custom">自定义...</option>
+            </select>
+            <input type="number" id="res-w" placeholder="宽" class="hidden" min="16" style="width:64px">
+            <input type="number" id="res-h" placeholder="高" class="hidden" min="16" style="width:64px">
+          </div>
+        </div>
+        <div class="field">
+          <label>帧率</label>
+          <select id="fps">
+            <option value="original" selected>保持</option>
+            <option value="60">60</option>
+            <option value="59.94">59.94</option>
+            <option value="30">30</option>
+            <option value="29.97">29.97</option>
+            <option value="25">25</option>
+            <option value="24">24</option>
+            <option value="23.976">23.976</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>音频</label>
+          <select id="audio">
+            <option value="copy" selected>复制</option>
+            <option value="none">移除</option>
+            <option value="aac-128k">AAC 128k</option>
+            <option value="aac-192k">AAC 192k</option>
+            <option value="aac-320k">AAC 320k</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>多音轨</label>
+          <select id="keep-all-audio">
+            <option value="1" selected>保留所有音轨</option>
+            <option value="0">仅第一条</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>高级参数</label>
+          <input type="text" id="custom-args" placeholder="-ss 00:10:00 -t 300">
+        </div>
+      </div>
+      <div class="ops-side">
+        <details class="collapse">
+          <summary>命令预览</summary>
+          <div class="cmd-line" id="cmd-preview">添加视频后将在此显示要执行的 ffmpeg 命令</div>
+          <div class="cmd-out" id="out-preview"></div>
+        </details>
+        <div class="start-wrap">
+          <button class="btn primary" id="btn-start">▶ 开始转码</button>
+          <div id="submit-error" class="error-msg"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 视频信息（独立框，参数下方、任务列表上方） -->
+  <section class="vinfo-panel hidden" id="vinfo-panel">
+    <span class="vinfo-label">视频信息</span>
+    <div id="video-info" class="video-info"></div>
+  </section>
+
+  <section class="task-panel">
+    <div class="list-header">
+      <h2>任务队列</h2>
+      <div class="list-header-right">
+        <span id="task-summary"></span>
+        <button class="btn small" id="btn-clear">清除已完成</button>
+      </div>
+    </div>
+    <div class="task-columns">
+      <div class="task-col">
+        <div class="col-header">
+          <span class="col-title">⏳ 待处理</span>
+          <span class="col-count" id="count-queued">0</span>
+        </div>
+        <div id="list-queued" class="task-list">
+          <div class="empty">暂无排队任务</div>
+        </div>
+      </div>
+      <div class="task-col">
+        <div class="col-header">
+          <span class="col-title">▶ 正在处理</span>
+          <span class="col-count" id="count-running">0</span>
+        </div>
+        <div id="list-running" class="task-list">
+          <div class="empty">暂无运行中任务</div>
+        </div>
+      </div>
+      <div class="task-col">
+        <div class="col-header">
+          <span class="col-title">✅ 已完成</span>
+          <span class="col-count" id="count-done">0</span>
+        </div>
+        <div id="list-done" class="task-list">
+          <div class="empty">暂无完成的任务</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- 详情弹窗 -->
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="modal-name">任务详情</h3>
+      <button class="btn small" id="modal-close">✕ 关闭</button>
+    </div>
+    <div class="m-row"><span>源文件</span><b id="modal-source"></b></div>
+    <div class="m-row" id="modal-output-row"><span>输出文件</span><b id="modal-output"></b></div>
+    <div class="m-section-title">视频信息</div>
+    <div id="modal-info" class="video-info"><span class="m-loading">加载中...</span></div>
+    <div id="modal-out-box" style="display:none">
+      <div class="m-section-title">输出视频信息</div>
+      <div id="modal-out-info" class="video-info"><span class="m-loading">加载中...</span></div>
+    </div>
+    <details class="collapse m-cmd" id="modal-cmd-box">
+      <summary>ffmpeg 命令</summary>
+      <div class="cmd-line" id="modal-cmd"></div>
+    </details>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='common.js') }}"></script>
+<script src="{{ url_for('static', filename='video.js') }}"></script>
+</body>
+</html>

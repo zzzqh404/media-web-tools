@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>照片压缩 · 本地媒体工具箱</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🖼️</span>
+      <div>
+        <h1>照片压缩</h1>
+        <div class="caps-info" id="caps-info">正在检测 Pillow...</div>
+      </div>
+    </div>
+    <nav class="tool-tabs">
+      <a href="/">🎬 视频转码</a>
+      <a href="/photo" class="active">🖼️ 照片压缩</a>
+    </nav>
+    <div class="topbar-actions">
+      <button class="btn danger" id="btn-stop" disabled>⏹ 停止全部任务</button>
+    </div>
+  </header>
+
+  <section class="ops-bar">
+    <!-- 行 1：添加照片 -->
+    <div class="ops-row">
+      <span class="ops-label">添加照片</span>
+      <button class="btn" id="btn-pick">📂 选择文件…</button>
+      <button class="btn" id="btn-pick-dir">📁 选择文件夹…</button>
+      <input type="text" id="path-input" placeholder="或粘贴本地路径（支持文件夹）">
+      <button class="btn" id="btn-add-path">添加</button>
+      <div id="pending-list" class="pending-list"></div>
+    </div>
+
+    <!-- 行 2：预设 + 参数 + 操作预览 + 开始 -->
+    <div class="ops-row ops-main">
+      <div id="preset-grid" class="preset-grid"></div>
+      <div class="params">
+        <div class="field hidden" id="field-quality">
+          <label><span id="quality-name">质量</span> <b id="quality-value">85</b></label>
+          <input type="range" id="quality" min="1" max="95" value="85">
+        </div>
+        <div class="field hidden" id="field-lossless">
+          <label>WebP 模式</label>
+          <div class="radio-row">
+            <label class="radio"><input type="checkbox" id="lossless"> 无损</label>
+          </div>
+        </div>
+        <div class="field hidden" id="field-speed">
+          <label>AVIF 速度</label>
+          <select id="speed">
+            <option value="4" selected>4（较慢·更小）</option>
+            <option value="6">6（平衡）</option>
+            <option value="8">8（快）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>缩放</label>
+          <div class="inline">
+            <select id="resize">
+              <option value="original" selected>保持原始尺寸</option>
+              <option value="long">长边不超过</option>
+              <option value="width">宽度不超过</option>
+              <option value="height">高度不超过</option>
+            </select>
+            <input type="number" id="resize-px" placeholder="像素" class="hidden" min="16" style="width:88px">
+          </div>
+        </div>
+        <div class="field">
+          <label>元数据</label>
+          <div class="radio-row">
+            <label class="radio"><input type="checkbox" id="keep-exif" checked> 保留 EXIF / ICC</label>
+          </div>
+        </div>
+        <div class="field">
+          <label>原图</label>
+          <div class="radio-row">
+            <label class="radio"><input type="checkbox" id="del-source"> 完成后删除原图</label>
+          </div>
+        </div>
+      </div>
+      <div class="ops-side">
+        <details class="collapse">
+          <summary>操作预览</summary>
+          <div class="cmd-line" id="op-preview">添加照片后将在此显示压缩摘要</div>
+          <div class="cmd-out" id="out-preview"></div>
+        </details>
+        <div class="start-wrap">
+          <button class="btn primary" id="btn-start">▶ 开始压缩</button>
+          <div id="submit-error" class="error-msg"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 照片信息（独立框，参数下方、任务列表上方） -->
+  <section class="vinfo-panel hidden" id="vinfo-panel">
+    <span class="vinfo-label">照片信息</span>
+    <div id="image-info" class="video-info"></div>
+  </section>
+
+  <section class="task-panel">
+    <div class="list-header">
+      <h2>任务队列</h2>
+      <div class="list-header-right">
+        <span id="task-summary"></span>
+        <button class="btn small" id="btn-clear">清除已完成</button>
+      </div>
+    </div>
+    <div class="task-columns">
+      <div class="task-col">
+        <div class="col-header">
+          <span class="col-title">⏳ 待处理</span>
+          <span class="col-count" id="count-queued">0</span>
+        </div>
+        <div id="list-queued" class="task-list">
+          <div class="empty">暂无排队任务</div>
+        </div>
+      </div>
+      <div class="task-col">
+        <div class="col-header">
+          <span class="col-title">▶ 正在处理</span>
+          <span class="col-count" id="count-running">0</span>
+        </div>
+        <div id="list-running" class="task-list">
+          <div class="empty">暂无运行中任务</div>
+        </div>
+      </div>
+      <div class="task-col">
+        <div class="col-header">
+          <span class="col-title">✅ 已完成</span>
+          <span class="col-count" id="count-done">0</span>
+        </div>
+        <div id="list-done" class="task-list">
+          <div class="empty">暂无完成的任务</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- 详情弹窗 -->
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="modal-name">任务详情</h3>
+      <button class="btn small" id="modal-close">✕ 关闭</button>
+    </div>
+    <div class="m-row"><span>源文件</span><b id="modal-source"></b></div>
+    <div class="m-row" id="modal-output-row"><span>输出文件</span><b id="modal-output"></b></div>
+    <div class="m-section-title">源照片信息</div>
+    <div id="modal-info" class="video-info"><span class="m-loading">加载中...</span></div>
+    <div id="modal-out-box" style="display:none">
+      <div class="m-section-title">输出照片信息</div>
+      <div id="modal-out-info" class="video-info"><span class="m-loading">加载中...</span></div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='common.js') }}"></script>
+<script src="{{ url_for('static', filename='photo.js') }}"></script>
+</body>
+</html>
