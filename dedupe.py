@@ -331,25 +331,31 @@ def clear_result():
 
 
 # ------------------------------------------------------------------- 缩略图
-def thumb_response(path):
+def thumb_response(path, size):
+    """图片缩略图/预览图；size 为最长边像素（64~1600），带内存缓存。"""
     with _scan_lock:
         scan = LAST_SCAN
         rec = scan["files"].get(path) if scan else None
     if rec is None or not rec.get("is_image"):
         return None
-    key = (path, rec["mtime"])
+    try:
+        size = int(size)
+    except (TypeError, ValueError):
+        size = THUMB_SIZE
+    size = max(64, min(1600, size))
+    key = (path, rec["mtime"], size)
     data = _thumb_cache.get(key)
     if data is None:
         with Image.open(path) as im:
             try:
-                im.draft("RGB", (THUMB_SIZE * 2, THUMB_SIZE * 2))
+                im.draft("RGB", (size * 2, size * 2))
             except Exception:
                 pass
             im.load()
             im = ImageOps.exif_transpose(im).convert("RGB")
-            im.thumbnail((THUMB_SIZE, THUMB_SIZE), Image.Resampling.LANCZOS)
+            im.thumbnail((size, size), Image.Resampling.LANCZOS)
             buf = io.BytesIO()
-            im.save(buf, "JPEG", quality=80)
+            im.save(buf, "JPEG", quality=85)
         data = buf.getvalue()
         if len(_thumb_cache) >= THUMB_CACHE_MAX:
             _thumb_cache.pop(next(iter(_thumb_cache)))

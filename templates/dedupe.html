@@ -92,9 +92,46 @@
     </div>
 
     <div class="du-groups" id="du-groups">
-      <div class="empty">选择文件夹开始扫描；结果按可释放空间排序，每组默认建议保留质量最高的一份</div>
+      <div class="empty">选择文件夹开始扫描；结果按可释放空间排序，默认按建议勾选要删除的文件，可自由调整</div>
     </div>
   </section>
+</div>
+
+<!-- 大图预览（灯箱） -->
+<div id="lightbox" class="modal hidden">
+  <div class="lb-card">
+    <div class="modal-head">
+      <h3 id="lb-name">预览</h3>
+      <button class="btn small" id="lb-close">✕ 关闭</button>
+    </div>
+    <div class="lb-body">
+      <button class="lb-nav" id="lb-prev" title="上一张 (←)">‹</button>
+      <img id="lb-img" alt="预览">
+      <button class="lb-nav" id="lb-next" title="下一张 (→)">›</button>
+    </div>
+    <div class="lb-foot">
+      <span id="lb-meta" class="lb-meta"></span>
+      <label class="du-del lb-del-toggle"><input type="checkbox" id="lb-del"> 勾选删除此文件</label>
+      <button class="btn small" id="lb-reveal">📂 定位</button>
+    </div>
+  </div>
+</div>
+
+<!-- 删除确认（带预览图） -->
+<div id="confirm-del" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>确认删除</h3>
+      <button class="btn small" id="cd-close">✕ 取消</button>
+    </div>
+    <div id="cd-summary" class="cd-summary"></div>
+    <div id="cd-grid" class="cd-grid"></div>
+    <div id="cd-warning" class="cd-warning hidden"></div>
+    <div class="cd-actions">
+      <button class="btn" id="cd-cancel">取消</button>
+      <button class="btn danger" id="cd-confirm">🗑 确认删除</button>
+    </div>
+  </div>
 </div>
 
 <script src="{{ url_for('static', filename='common.js') }}"></script>

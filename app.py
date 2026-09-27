@@ -209,7 +209,7 @@ def dedupe_result():
 @app.route("/api/dedupe/thumb")
 def dedupe_thumb():
     p = clean_path(request.args.get("path"))
-    resp = dedupe.thumb_response(p)
+    resp = dedupe.thumb_response(p, request.args.get("size"))
     if resp is None:
         return jsonify({"error": "文件不在扫描结果中或不是图片"}), 404
     return resp

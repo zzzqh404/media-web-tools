@@ -150,6 +150,16 @@ def test_thumb_endpoint(client, worker_thread, tmp_path):
     assert r2.status_code == 404
 
 
+def test_thumb_size_param(client, worker_thread, tmp_path):
+    """size 参数控制预览图尺寸（灯箱用大图），非法值回退默认。"""
+    base, _, _ = make_photo_folder(tmp_path)
+    scan_and_wait(client, worker_thread, tmp_path)
+    for size in ("240", "800", "bogus"):
+        r = client.get(f"/api/dedupe/thumb?path={base}&size={size}")
+        assert r.status_code == 200, size
+        assert r.mimetype == "image/jpeg", size
+
+
 # ---------------------------------------------------------------- 删除
 
 def test_delete_permanent_and_regroup(client, worker_thread, tmp_path):

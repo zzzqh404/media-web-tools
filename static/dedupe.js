@@ -3,6 +3,7 @@ const BASE = '/api/dedupe';
 
 let result = null;          // /api/dedupe/result 响应
 let pollTimer = null;
+let lightbox = null;        // { gid, row } 当前预览的组与行号
 
 /* ---------------- 扫描 ---------------- */
 async function startScan() {
@@ -88,6 +89,7 @@ async function loadResult() {
 }
 
 const fmtSize = b => formatBytes(b) || '0 B';
+const thumbUrl = (path, size) => `${BASE}/thumb?path=${encodeURIComponent(path)}&size=${size}`;
 
 function renderResult() {
   const groups = (result && result.ready) ? result.groups : [];
@@ -129,13 +131,13 @@ function groupCard(g) {
     : '<span class="du-badge similar">相似</span>';
   const rows = g.files.map((f, i) => `
     <div class="du-row" data-path="${escapeHtml(f.path)}">
-      <label class="du-keep" title="保留此文件，删除组内其他文件">
-        <input type="radio" name="keep-${g.id}" data-keep="${escapeHtml(f.path)}"
-               ${f.suggest_delete ? '' : 'checked'}>
-        保留
+      <label class="du-del" title="勾选 = 删除此文件">
+        <input type="checkbox" data-del="${escapeHtml(f.path)}" ${f.suggest_delete ? 'checked' : ''}>
+        删除
       </label>
       ${f.is_image && f.w
-        ? `<img class="du-thumb" loading="lazy" src="${BASE}/thumb?path=${encodeURIComponent(f.path)}" alt="">`
+        ? `<img class="du-thumb" loading="lazy" title="点击查看大图"
+               src="${thumbUrl(f.path, 240)}" data-row="${i}" alt="">`
         : '<span class="du-thumb du-thumb-file">📄</span>'}
       <div class="du-info">
         <div class="du-name" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}
@@ -153,11 +155,28 @@ function groupCard(g) {
     <div class="du-group-head">
       ${badge}
       <span>${g.files.length} 个文件 · 可释放 ${fmtSize(g.wasted)}</span>
+      <span class="du-spacer"></span>
+      <span class="du-sel" data-sel></span>
+      <button class="btn small du-mini" data-gact="sel-all">全选</button>
+      <button class="btn small du-mini" data-gact="sel-none">全不选</button>
     </div>
     ${rows}
   `;
   card.addEventListener('change', e => {
-    if (e.target.matches('input[data-keep]')) updateDeleteBar();
+    if (e.target.matches('input[data-del]')) updateDeleteBar();
+  });
+  card.addEventListener('click', e => {
+    const gact = e.target.closest('[data-gact]');
+    if (gact) {
+      card.querySelectorAll('input[data-del]').forEach(cb => {
+        cb.checked = gact.dataset.gact === 'sel-all';
+      });
+      updateDeleteBar();
+      return;
+    }
+    if (e.target.matches('img.du-thumb')) {
+      openLightbox(g.id, Number(e.target.dataset.row));
+    }
   });
   card.querySelectorAll('[data-act="reveal"]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -172,49 +191,91 @@ function groupCard(g) {
       }
     });
   });
+  updateGroupSelCount(card);
   return card;
 }
 
-/* 统计“将删除”的文件：每组除保留项以外的全部 */
+function updateGroupSelCount(card) {
+  const el = card.querySelector('[data-sel]');
+  if (!el) return;
+  const boxes = Array.from(card.querySelectorAll('input[data-del]'));
+  const n = boxes.filter(cb => cb.checked).length;
+  el.textContent = `已选删除 ${n}/${boxes.length}`;
+}
+
+/* 勾选了删除的文件路径 + 整组全删的组列表 */
 function collectDeletes() {
   const paths = [];
+  const fullGroups = [];
   document.querySelectorAll('.du-group').forEach(card => {
-    const keep = card.querySelector('input[data-keep]:checked');
-    if (!keep) return;
-    card.querySelectorAll('.du-row').forEach(row => {
-      if (row.dataset.path !== keep.dataset.keep) paths.push(row.dataset.path);
-    });
+    const boxes = Array.from(card.querySelectorAll('input[data-del]'));
+    const picked = boxes.filter(cb => cb.checked);
+    paths.push(...picked.map(cb => cb.dataset.del));
+    if (picked.length === boxes.length && boxes.length > 0) {
+      const name = card.querySelector('.du-name');
+      fullGroups.push(name ? name.textContent.trim() : card.dataset.gid);
+    }
   });
-  return paths;
+  return { paths, fullGroups };
 }
 
 function updateDeleteBar() {
-  const paths = collectDeletes();
+  const { paths } = collectDeletes();
   let bytes = 0;
   if (result && result.ready) {
     const byPath = new Map(result.groups.flatMap(g => g.files.map(f => [f.path, f])));
     bytes = paths.reduce((s, p) => s + ((byPath.get(p) || {}).size || 0), 0);
   }
+  document.querySelectorAll('.du-group').forEach(updateGroupSelCount);
   $('du-delete-count').textContent = paths.length
     ? `将删除 ${paths.length} 个文件，释放约 ${fmtSize(bytes)}`
-    : '每组勾选一个要保留的文件';
+    : '勾选要删除的文件（默认按建议勾好）';
   $('btn-delete').disabled = !paths.length;
 }
 
-/* ---------------- 删除 ---------------- */
-async function deleteSelected() {
-  const paths = collectDeletes();
+/* ---------------- 删除（弹确认框，带预览图） ---------------- */
+function askDelete() {
+  const { paths, fullGroups } = collectDeletes();
   if (!paths.length) return;
   const mode = document.querySelector('input[name="del-mode"]:checked').value;
   const verb = mode === 'recycle' ? '移入回收站' : '永久删除';
   let bytes = 0;
-  if (result && result.ready) {
-    const byPath = new Map(result.groups.flatMap(g => g.files.map(f => [f.path, f])));
-    bytes = paths.reduce((s, p) => s + ((byPath.get(p) || {}).size || 0), 0);
+  const byPath = new Map(result.groups.flatMap(g => g.files.map(f => [f.path, f])));
+  const items = paths.map(p => ({ p, f: byPath.get(p) || {} }));
+  bytes = items.reduce((s, it) => s + (it.f.size || 0), 0);
+
+  $('cd-summary').textContent =
+    `将${verb} ${paths.length} 个文件，释放约 ${fmtSize(bytes)}。请核对以下预览图：`;
+  const grid = $('cd-grid');
+  grid.innerHTML = items.map(it => `
+    <div class="cd-item">
+      ${(it.f.is_image && it.f.w)
+        ? `<img src="${thumbUrl(it.p, 240)}" alt="">`
+        : '<div class="cd-file">📄</div>'}
+      <div class="cd-name" title="${escapeHtml(it.p)}">${escapeHtml(it.f.name || it.p.split(/[\\/]/).pop())}</div>
+      <div class="cd-size">${fmtSize(it.f.size || 0)}</div>
+    </div>`).join('');
+  const warn = $('cd-warning');
+  if (fullGroups.length) {
+    warn.textContent = `⚠ 整组全部勾选（将不留任何副本）：${fullGroups.join('、')}`;
+    warn.classList.remove('hidden');
+  } else {
+    warn.textContent = '';
+    warn.classList.add('hidden');
   }
-  if (!confirm(`确定要${verb} ${paths.length} 个文件（约 ${fmtSize(bytes)}）吗？\n\n建议先抽查几个“定位”确认无误。`)) {
-    return;
-  }
+  const confirmBtn = $('cd-confirm');
+  confirmBtn.textContent = mode === 'recycle'
+    ? `🗑 移入回收站（${paths.length} 个）`
+    : `🗑 永久删除（${paths.length} 个）`;
+  confirmBtn.dataset.mode = mode;
+  $('confirm-del').classList.remove('hidden');
+}
+
+async function doDelete() {
+  const { paths } = collectDeletes();
+  const mode = $('cd-confirm').dataset.mode;
+  closeConfirm();
+  if (!paths.length) return;
   $('btn-delete').disabled = true;
   try {
     const data = await api(`${BASE}/delete`, {
@@ -237,6 +298,63 @@ async function deleteSelected() {
   }
 }
 
+function closeConfirm() {
+  $('confirm-del').classList.add('hidden');
+}
+
+/* ---------------- 大图预览（组内左右翻页） ---------------- */
+function openLightbox(gid, row) {
+  lightbox = { gid, row };
+  renderLightbox();
+  $('lightbox').classList.remove('hidden');
+}
+
+function renderLightbox() {
+  if (!lightbox || !result || !result.ready) return;
+  const g = result.groups.find(x => x.id === lightbox.gid);
+  if (!g) return;
+  const f = g.files[lightbox.row];
+  $('lb-name').textContent = f.name;
+  $('lb-img').src = thumbUrl(f.path, 1200);
+  $('lb-meta').textContent =
+    `${fmtSize(f.size)}${f.w ? ` · ${f.w}×${f.h}` : ''} · 第 ${lightbox.row + 1}/${g.files.length} 张 · ${f.path}`;
+  const cb = findDelCheckbox(g.id, f.path);
+  $('lb-del').checked = cb ? cb.checked : false;
+  $('lb-prev').disabled = g.files.length < 2;
+  $('lb-next').disabled = g.files.length < 2;
+}
+
+function moveLightbox(step) {
+  if (!lightbox || !result || !result.ready) return;
+  const g = result.groups.find(x => x.id === lightbox.gid);
+  if (!g || g.files.length < 2) return;
+  lightbox.row = (lightbox.row + step + g.files.length) % g.files.length;
+  renderLightbox();
+}
+
+function closeLightbox() {
+  $('lightbox').classList.add('hidden');
+  lightbox = null;
+}
+
+/* 灯箱里的删除勾选与列表双向同步 */
+function syncLightboxCheckbox() {
+  if (!lightbox || !result || !result.ready) return;
+  const g = result.groups.find(x => x.id === lightbox.gid);
+  if (!g) return;
+  const f = g.files[lightbox.row];
+  const cb = findDelCheckbox(g.id, f.path);
+  if (cb) {
+    cb.checked = $('lb-del').checked;
+    updateDeleteBar();
+  }
+}
+
+function findDelCheckbox(gid, path) {
+  return Array.from(document.querySelectorAll(`.du-group[data-gid="${gid}"] input[data-del]`))
+    .find(x => x.dataset.del === path);
+}
+
 /* ---------------- 事件 ---------------- */
 function init() {
   $('btn-pick-dir').addEventListener('click', async () => {
@@ -256,12 +374,14 @@ function init() {
       await api(`${BASE}/stop-all`, { method: 'POST' });
     } catch (e) { $('submit-error').textContent = e.message; }
   });
-  $('btn-delete').addEventListener('click', deleteSelected);
+  $('btn-delete').addEventListener('click', askDelete);
   $('btn-reset-keep').addEventListener('click', () => {
-    // 后端把“建议保留”的文件排在每组第一行，勾回每组第一项即恢复默认建议
+    // 恢复默认建议：勾回所有 suggest_delete 文件（组内第一个未勾选项为建议保留）
     document.querySelectorAll('.du-group').forEach(card => {
-      const first = card.querySelector('input[data-keep]');
-      if (first) first.checked = true;
+      card.querySelectorAll('.du-row').forEach((row, idx) => {
+        const cb = row.querySelector('input[data-del]');
+        if (cb) cb.checked = idx > 0;   // 后端把建议保留的文件排在每组第一行
+      });
     });
     updateDeleteBar();
   });
@@ -271,6 +391,44 @@ function init() {
   });
   $('threshold').addEventListener('input', () => {
     $('threshold-value').textContent = $('threshold').value;
+  });
+
+  // 删除确认框
+  $('cd-confirm').addEventListener('click', doDelete);
+  $('cd-cancel').addEventListener('click', closeConfirm);
+  $('cd-close').addEventListener('click', closeConfirm);
+  $('confirm-del').addEventListener('click', e => {
+    if (e.target === $('confirm-del')) closeConfirm();
+  });
+
+  // 灯箱
+  $('lb-close').addEventListener('click', closeLightbox);
+  $('lightbox').addEventListener('click', e => {
+    if (e.target === $('lightbox')) closeLightbox();
+  });
+  $('lb-prev').addEventListener('click', () => moveLightbox(-1));
+  $('lb-next').addEventListener('click', () => moveLightbox(1));
+  $('lb-reveal').addEventListener('click', async () => {
+    if (!lightbox || !result || !result.ready) return;
+    const g = result.groups.find(x => x.id === lightbox.gid);
+    if (!g) return;
+    try {
+      await api(`${BASE}/reveal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: g.files[lightbox.row].path }),
+      });
+    } catch (e) { alert(e.message); }
+  });
+  $('lb-del').addEventListener('change', syncLightboxCheckbox);
+  document.addEventListener('keydown', e => {
+    if (!$('lightbox').classList.contains('hidden')) {
+      if (e.key === 'Escape') closeLightbox();
+      else if (e.key === 'ArrowLeft') moveLightbox(-1);
+      else if (e.key === 'ArrowRight') moveLightbox(1);
+    } else if (!$('confirm-del').classList.contains('hidden') && e.key === 'Escape') {
+      closeConfirm();
+    }
   });
 
   loadResult();
