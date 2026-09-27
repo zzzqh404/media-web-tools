@@ -27,6 +27,7 @@ class TaskManager:
 
     run_task(mgr, t)      实际编码 + 状态收尾（完成后/失败/取消的落账）；
     candidate(src, name, params)  输出路径候选（不含 _1/_2 去重）；
+                          扫描类任务没有输出文件，传 None 即可
     serialize_keys        序列化时在公共字段外附加的任务字段；
     on_cancel_running(t)  取消运行中任务的钩子（如向 ffmpeg stdin 发 q）。
     """
@@ -52,7 +53,10 @@ class TaskManager:
 
     def new_task(self, source, name, params):
         tid = uuid.uuid4().hex[:12]
-        out = self.reserve_output(source, name, params)
+        if self.candidate is not None:
+            out = str(self.reserve_output(source, name, params))
+        else:
+            out = ""
         task = {
             "id": tid,
             "source": str(source),
@@ -62,7 +66,7 @@ class TaskManager:
             "progress": 0.0,
             "speed": None,
             "error": "",
-            "output": str(out),
+            "output": out,
             "cmd": "",
             "duration": None,
             "src_size": 0,

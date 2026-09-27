@@ -28,13 +28,16 @@ def stub_ffmpeg(tmp_path_factory):
 @pytest.fixture()
 def client(monkeypatch, stub_ffmpeg):
     import app as appmod
+    import dedupe as dedupemod
     import video as videomod
 
     monkeypatch.setattr(videomod, "FFMPEG", stub_ffmpeg)
     monkeypatch.setattr(videomod, "FFPROBE", stub_ffmpeg)
     videomod._ffi_cache = None
     videomod.DYNAMIC_PRESETS.clear()
-    for mgr in (appmod.video_mgr, appmod.photo_mgr):
+    dedupemod.LAST_SCAN = None
+    dedupemod._thumb_cache.clear()
+    for mgr in (appmod.video_mgr, appmod.photo_mgr, appmod.dedupe_mgr):
         with mgr.lock:
             mgr.tasks.clear()
             mgr.queue.clear()
@@ -50,6 +53,6 @@ def worker_thread():
     import threading
 
     import app as appmod
-    for mgr in (appmod.video_mgr, appmod.photo_mgr):
+    for mgr in (appmod.video_mgr, appmod.photo_mgr, appmod.dedupe_mgr):
         th = threading.Thread(target=mgr.worker, daemon=True)
         th.start()

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>重复清理 · 本地媒体工具箱</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🧹</span>
+      <div>
+        <h1>重复清理</h1>
+        <div class="caps-info" id="du-info">查找完全重复的文件与相似的照片，删除前请仔细核对</div>
+      </div>
+    </div>
+    <nav class="tool-tabs">
+      <a href="/">🎬 视频转码</a>
+      <a href="/photo">🖼️ 照片压缩</a>
+      <a href="/dedupe" class="active">🧹 重复清理</a>
+    </nav>
+    <div class="topbar-actions">
+      <button class="btn danger" id="btn-stop" disabled>⏹ 停止扫描</button>
+    </div>
+  </header>
+
+  <section class="ops-bar">
+    <!-- 行 1：选择扫描文件夹 -->
+    <div class="ops-row">
+      <span class="ops-label">扫描位置</span>
+      <button class="btn" id="btn-pick-dir">📁 选择文件夹…</button>
+      <input type="text" id="path-input" placeholder="或粘贴文件夹路径（含子文件夹）">
+      <button class="btn" id="btn-add-path">填入</button>
+    </div>
+
+    <!-- 行 2：查重选项 + 开始 -->
+    <div class="ops-row">
+      <span class="ops-label">查重方式</span>
+      <label class="radio"><input type="checkbox" id="opt-exact" checked> 完全重复（内容哈希，快）</label>
+      <label class="radio"><input type="checkbox" id="opt-similar"> 相似照片（感知哈希，较慢）</label>
+      <div class="field hidden" id="field-threshold">
+        <label>相似程度 <b id="threshold-value">8</b>/24（越大越宽松）</label>
+        <input type="range" id="threshold" min="0" max="24" value="8">
+      </div>
+      <div class="field">
+        <label>忽略小于 (KB)</label>
+        <input type="number" id="min-size-kb" value="64" min="0" style="width:88px">
+      </div>
+      <div class="start-wrap">
+        <button class="btn primary" id="btn-start">🔍 开始扫描</button>
+        <div id="submit-error" class="error-msg"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 扫描进度 -->
+  <section class="vinfo-panel hidden" id="scan-panel">
+    <span class="vinfo-label">扫描进度</span>
+    <div class="du-progress">
+      <div class="progress-bar">
+        <div class="progress-fill running" id="scan-fill" style="width:0%"></div>
+      </div>
+      <div class="progress-label">
+        <span id="scan-text">准备中...</span>
+        <span id="scan-count"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 扫描结果 -->
+  <section class="task-panel">
+    <div class="list-header">
+      <h2>扫描结果</h2>
+      <div class="list-header-right">
+        <span id="du-summary">尚未扫描</span>
+        <button class="btn small" id="btn-reset-keep" style="display:none">恢复默认建议</button>
+      </div>
+    </div>
+
+    <div class="du-actions hidden" id="du-actions">
+      <span id="du-delete-count"></span>
+      <span class="du-spacer"></span>
+      <label class="radio du-mode">
+        <input type="radio" name="del-mode" value="recycle" checked> 移入回收站
+      </label>
+      <label class="radio du-mode">
+        <input type="radio" name="del-mode" value="permanent"> 直接删除
+      </label>
+      <button class="btn danger" id="btn-delete" disabled>🗑 删除选中文件</button>
+    </div>
+
+    <div class="du-groups" id="du-groups">
+      <div class="empty">选择文件夹开始扫描；结果按可释放空间排序，每组默认建议保留质量最高的一份</div>
+    </div>
+  </section>
+</div>
+
+<script src="{{ url_for('static', filename='common.js') }}"></script>
+<script src="{{ url_for('static', filename='dedupe.js') }}"></script>
+</body>
+</html>
