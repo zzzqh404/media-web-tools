@@ -44,8 +44,8 @@ if errorlevel 1 (
     echo.
 )
 
-rem ---- 安装依赖（flask + Pillow + pillow-heif）----
-"%PYEXE%" -c "import flask, PIL" >nul 2>nul
+rem ---- 安装依赖（flask + Pillow + pillow-heif + send2trash）----
+"%PYEXE%" -c "import flask, PIL, send2trash" >nul 2>nul
 if errorlevel 1 (
     echo 首次运行，正在安装依赖...
     "%PYEXE%" -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
